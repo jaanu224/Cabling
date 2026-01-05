@@ -20,12 +20,16 @@ from reportlab.lib.units import mm
 app = Flask(__name__)
 
 # ---------------------------------------------------------
-#  CONFIG – WINDOWS PATHS
+#  CONFIG – WINDOWS PATHS (IMPORTANT)
 # ---------------------------------------------------------
 
+# Tesseract OCR executable path
 TESSERACT_EXE = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+# Poppler bin path
 POPPLER_PATH = r"C:\poppler-24.08.0\Library\bin"
 
+# Set tesseract command explicitly
 if os.path.exists(TESSERACT_EXE):
     pytesseract.pytesseract.tesseract_cmd = TESSERACT_EXE
 
@@ -33,7 +37,11 @@ if os.path.exists(TESSERACT_EXE):
 # ==================== OCR HELPERS ====================
 
 def ocr_pdf_to_text(pdf_bytes: bytes) -> str:
-    pages = convert_from_bytes(pdf_bytes, dpi=300, poppler_path=POPPLER_PATH)
+    pages = convert_from_bytes(
+        pdf_bytes,
+        dpi=300,
+        poppler_path=POPPLER_PATH
+    )
     text_chunks = []
     for page in pages:
         text = pytesseract.image_to_string(page, lang="eng")
@@ -53,16 +61,13 @@ def extract_header_voltage_and_material(lines):
     voltage_kv = None
     material = None
 
-    m = re.search(r'(\d+(?:\.\d+)?)\s*k\s*?v', header, flags=re.IGNORECASE)
+    m = re.search(r'(\d+(?:\.\d+)?)\s*k\s*?v', header)
     if m:
-        try:
-            voltage_kv = float(m.group(1))
-        except ValueError:
-            voltage_kv = None
+        voltage_kv = float(m.group(1))
 
     if "copper" in header or " cu " in header:
         material = "Copper"
-    elif ("aluminium" in header or "aluminum" in header or " al " in header):
+    elif "aluminium" in header or "aluminum" in header or " al " in header:
         material = "Aluminium"
 
     return voltage_kv, material
@@ -82,7 +87,7 @@ def extract_header_insulation_and_outer(lines):
     elif " pe " in header:
         insulation = "PE"
     elif "oil" in header:
-        insulation = "oil"
+        insulation = "Oil"
 
     m = re.search(r'(\b[a-z]+)\s+outer\s+sheath', header)
     if m:
@@ -97,42 +102,42 @@ def extract_conductor_and_sheath_material_from_header(lines):
     conductor = None
     sheath = None
 
-    if re.search(r'\b(copper|cu)\b[^,\n]*conductor', header):
+    if re.search(r'(copper|cu).*conductor', header):
         conductor = "Copper"
-    elif re.search(r'\b(aluminium|aluminum|al)\b[^,\n]*conductor', header):
+    elif re.search(r'(aluminium|aluminum|al).*conductor', header):
         conductor = "Aluminium"
 
-    if re.search(r'\baluminium\b[^,\n]*sheath', header):
-        sheath = "aluminium"
-    elif re.search(r'\bcopper\b[^,\n]*sheath', header):
-        sheath = "copper"
+    if re.search(r'aluminium.*sheath', header):
+        sheath = "Aluminium"
+    elif re.search(r'copper.*sheath', header):
+        sheath = "Copper"
 
     return conductor, sheath
 
 
 def detect_conductor_material_global(text: str):
-    lower = text.lower()
-    if "copper conductor" in lower:
+    t = text.lower()
+    if "copper conductor" in t:
         return "Copper"
-    if "aluminium conductor" in lower or "aluminum conductor" in lower:
+    if "aluminium conductor" in t or "aluminum conductor" in t:
         return "Aluminium"
     return None
 
 
 def extract_rated_voltages(text: str):
-    m = re.search(r"RATED\s+VOLTAGE\s*:\s*([0-9/\s\.]+)kV", text, flags=re.IGNORECASE)
+    m = re.search(r"RATED\s+VOLTAGE\s*:\s*([0-9/\s\.]+)kV", text, re.IGNORECASE)
     if not m:
         return []
-    return [float(x) for x in re.findall(r"\d+(?:\.\d+)?", m.group(1))]
+    return [float(v) for v in re.findall(r"\d+(?:\.\d+)?", m.group(1))]
 
 
 def extract_short_circuit_current(text: str):
-    values = re.findall(r'(\d+(?:\.\d+)?)\s*kA', text, flags=re.IGNORECASE)
+    values = re.findall(r'(\d+(?:\.\d+)?)\s*kA', text, re.IGNORECASE)
     return max(map(float, values)) if values else None
 
 
 def extract_time_seconds(text: str):
-    m = re.search(r'(\d+(?:\.\d+)?)\s*(s|sec|seconds)', text, flags=re.IGNORECASE)
+    m = re.search(r'(\d+(?:\.\d+)?)\s*(s|sec|seconds)', text, re.IGNORECASE)
     return float(m.group(1)) if m else None
 
 
@@ -152,6 +157,7 @@ def choose_main_voltage(header_voltage, rated_voltages):
 
 def extract_cable_parameters(text: str):
     lines = get_first_nonempty_lines(text, n=8)
+
     header_voltage, header_material = extract_header_voltage_and_material(lines)
     insulation, outer_sheath = extract_header_insulation_and_outer(lines)
     conductor, sheath = extract_conductor_and_sheath_material_from_header(lines)
@@ -182,11 +188,14 @@ def extract_cable_parameters(text: str):
 def build_pdf_report(title, conductor_text, sheath_text):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
+
     c.setFont("Helvetica-Bold", 14)
     c.drawCentredString(300, 800, title)
+
     c.setFont("Helvetica", 10)
     c.drawString(50, 760, conductor_text)
     c.drawString(50, 700, sheath_text)
+
     c.save()
     buffer.seek(0)
     return buffer
@@ -214,7 +223,12 @@ def api_generate_pdf():
         data.get("conductorText", ""),
         data.get("sheathText", "")
     )
-    return send_file(pdf, mimetype="application/pdf", as_attachment=True)
+    return send_file(
+        pdf,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name="Cable_Report.pdf"
+    )
 
 
 # ==================== WINDOWS HOSTING ENTRY ====================
