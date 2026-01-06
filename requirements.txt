@@ -1,3 +1,7 @@
 flask
-
-
+pytesseract
+pdf2image
+pillow
+reportlab
+gunicorn
+PyPDF2
